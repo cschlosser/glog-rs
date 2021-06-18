@@ -61,12 +61,14 @@ fn get_tid() -> u64 {
     nix::sys::pthread::pthread_self().try_into().unwrap()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn get_tid() -> u64 {
+    nix::unistd::gettid().as_raw().try_into().unwrap()
 }
 
 #[cfg(target_os = "windows")]
 fn get_tid() -> u64 {
+    bindings::Windows::Win32::System::Threading::GetCurrentThreadId().try_into().unwrap()
 }
 
 impl Log for GLog {

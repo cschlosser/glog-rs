@@ -18,5 +18,8 @@ log = { version = "0.4.11", features = ["std"] }
 thread_local = "~1.0"
 termcolor = "~1.1"
 chrono = "0.4.10"
+[target.'cfg(windows)'.dependencies]
+windows = "0.11.0"
+[target.'cfg(unix)'.dependencies]
 nix = "0.21.0"
 
