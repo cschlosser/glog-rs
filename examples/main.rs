@@ -27,6 +27,9 @@ fn main() {
         .init(Flags {
             colorlogtostderr: true,
             minloglevel: Level::Trace,
+            log_backtrace_at: Some("main.rs:11".to_owned()),
+            logtostderr: true,
+            ..Default::default()
         })
         .unwrap();
 
