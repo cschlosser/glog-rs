@@ -1,0 +1,8 @@
+kind: pipeline
+name: default
+
+steps:
+- name: build
+  image: rust:1.50
+  commands:
+    - cargo build --verbose --all
