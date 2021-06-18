@@ -1,0 +1,22 @@
+[package]
+name = "glog"
+version = "0.1.0"
+authors = ["Christoph Schlosser <christoph@linux.com>"]
+edition = "2018"
+license = "BSD-3-Clause"
+
+[lib]
+name = "glog"
+path = "lib/glog.rs"
+
+[[bin]]
+name = "example"
+path = "example/main.rs"
+
+[dependencies]
+log = { version = "0.4.11", features = ["std"] }
+thread_local = "~1.0"
+termcolor = "~1.1"
+chrono = "0.4.10"
+nix = "0.21.0"
+
