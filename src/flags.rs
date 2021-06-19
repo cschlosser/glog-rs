@@ -1,4 +1,6 @@
 use log::Level;
+use std::env::temp_dir;
+use std::ffi::OsString;
 
 #[derive(Debug, Clone)]
 pub struct Flags {
@@ -7,6 +9,7 @@ pub struct Flags {
     pub log_backtrace_at: Option<String>,
     pub logtostderr: bool,
     pub alsologtostderr: bool,
+    pub log_dir: OsString,
 }
 
 impl Default for Flags {
@@ -17,6 +20,7 @@ impl Default for Flags {
             log_backtrace_at: None,
             logtostderr: false,
             alsologtostderr: false,
+            log_dir: temp_dir().into_os_string(), // todo: can this be empty?
         }
     }
 }
