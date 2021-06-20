@@ -1,5 +1,5 @@
-use log::*;
 use glog::Flags;
+use log::*;
 
 mod foo;
 
@@ -19,6 +19,5 @@ fn main() {
 
     error!("some erro in main while testing the logger");
 
-    foo::foo();    
+    foo::foo();
 }
-

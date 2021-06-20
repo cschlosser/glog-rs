@@ -1,26 +1,27 @@
-use log::{Log, Record, Metadata, Level};
-use std::cell::RefCell;
-use termcolor::StandardStream;
-use thread_local::CachedThreadLocal;
-use termcolor::{ColorSpec, ColorChoice, Color, WriteColor};
-use std::io::{LineWriter, Write};
-use std::path::Path;
-use chrono::Local;
-use chrono::DateTime;
-use std::convert::TryInto;
+// todo: add documentation
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    convert::TryInto,
+    ffi::{OsStr, OsString},
+    fs::{File, OpenOptions},
+    io::{LineWriter, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
+
 use backtrace::Backtrace;
-use std::ffi::{OsStr, OsString};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::sync::{Arc, Mutex};
 use bimap::BiMap;
+use chrono::{DateTime, Local};
 use if_empty::*;
+use log::{Level, Log, Metadata, Record};
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use thread_local::CachedThreadLocal;
 
 mod flags;
 
-pub use flags::Flags as Flags;
+pub use flags::Flags;
 
 pub struct Glog {
     stderr_writer: CachedThreadLocal<RefCell<StandardStream>>,
@@ -46,6 +47,7 @@ impl Glog {
             level_integers: BiMap::new(),
         }
     }
+
     pub fn init(&mut self, flags: Flags) -> Result<(), log::SetLoggerError> {
         self.level_integers.insert(Level::Trace, -2);
         self.level_integers.insert(Level::Debug, -1);
@@ -88,7 +90,12 @@ impl Glog {
     fn create_log_files(&mut self) {
         let log_file_dir = self.flags.log_dir.clone();
         let mut log_file_name = OsString::new();
-        log_file_name.push(std::env::current_exe().unwrap_or(PathBuf::from_str("UNKNOWN").unwrap_or(PathBuf::new())).file_name().unwrap_or(OsStr::new("UNKNOWN")));
+        log_file_name.push(
+            std::env::current_exe()
+                .unwrap_or(PathBuf::from_str("UNKNOWN").unwrap_or(PathBuf::new()))
+                .file_name()
+                .unwrap_or(OsStr::new("UNKNOWN")),
+        );
         log_file_name.push(".");
         log_file_name.push(gethostname::gethostname().if_empty(OsString::from("(unknown)")));
         log_file_name.push(".");
@@ -124,7 +131,11 @@ impl Glog {
     fn write_file_header(&mut self, file_path: &OsString, level: &Level) {
         {
             let mut file = match File::create(&file_path) {
-                Err(why) => panic!("couldn't create {}: {}", file_path.to_str().unwrap_or("<INVALID FILE PATH>"), why),
+                Err(why) => panic!(
+                    "couldn't create {}: {}",
+                    file_path.to_str().unwrap_or("<INVALID FILE PATH>"),
+                    why
+                ),
                 Ok(file) => file,
             };
 
@@ -145,11 +156,23 @@ impl Glog {
             ).expect("couldn't write log file header");
 
             match file.flush() {
-                Err(why) => panic!("couldn't flush {} after writing file header: {}", file_path.to_str().unwrap(), why),
+                Err(why) => panic!(
+                    "couldn't flush {} after writing file header: {}",
+                    file_path.to_str().unwrap(),
+                    why
+                ),
                 _ => (),
             }
         }
-        self.file_writer.insert(*level, Arc::new(Mutex::new(RefCell::new(OpenOptions::new().append(true).open(&file_path).expect("Couldn't open file after header is written")))));
+        self.file_writer.insert(
+            *level,
+            Arc::new(Mutex::new(RefCell::new(
+                OpenOptions::new()
+                    .append(true)
+                    .open(&file_path)
+                    .expect("Couldn't open file after header is written"),
+            ))),
+        );
     }
 
     fn should_log_backtrace(&self, file_name: &str, line: u32) -> bool {
@@ -162,17 +185,19 @@ impl Glog {
     }
 
     fn record_to_file_name(record: &Record) -> String {
-        Path::new(record.file().unwrap_or("")).file_name().unwrap_or(std::ffi::OsStr::new("")).to_os_string().into_string().unwrap_or("".to_owned())
+        Path::new(record.file().unwrap_or(""))
+            .file_name()
+            .unwrap_or(std::ffi::OsStr::new(""))
+            .to_os_string()
+            .into_string()
+            .unwrap_or("".to_owned())
     }
 
     fn build_log_message(&self, record: &Record) -> String {
-        format!("{}{} {:5} {}:{}] {}",
+        format!(
+            "{}{} {:5} {}:{}] {}",
             self.match_level(&record.metadata().level()).as_str().chars().nth(0).unwrap(),
-            Local::now().format(
-                &format!("{}%m%d %H:%M:%S%.6f",
-                    if self.compatible_date { "" } else { "%Y" }
-                )
-            ),
+            Local::now().format(&format!("{}%m%d %H:%M:%S%.6f", if self.compatible_date { "" } else { "%Y" })),
             get_tid(),
             Glog::record_to_file_name(record),
             record.line().unwrap(),
@@ -181,16 +206,21 @@ impl Glog {
     }
 
     fn write_stderr(&self, record: &Record) {
-        let stderr_writer = self.stderr_writer.get_or(|| RefCell::new(StandardStream::stderr(ColorChoice::Auto)));
+        let stderr_writer = self
+            .stderr_writer
+            .get_or(|| RefCell::new(StandardStream::stderr(ColorChoice::Auto)));
         let stderr_writer = stderr_writer.borrow_mut();
         let mut stderr_writer = LineWriter::new(stderr_writer.lock());
 
         if self.flags.colorlogtostderr {
-            stderr_writer.get_mut().set_color(ColorSpec::new().set_fg(match record.metadata().level() {
-                Level::Error => Some(Color::Red),
-                Level::Warn => Some(Color::Yellow),
-                _ => None
-            })).expect("failed to set color");
+            stderr_writer
+                .get_mut()
+                .set_color(ColorSpec::new().set_fg(match record.metadata().level() {
+                    Level::Error => Some(Color::Red),
+                    Level::Warn => Some(Color::Yellow),
+                    _ => None,
+                }))
+                .expect("failed to set color");
         }
 
         let file_name = Glog::record_to_file_name(record);
@@ -233,9 +263,7 @@ impl Glog {
         }
     }
 
-    fn write_sinks(&self) {
-
-    }
+    fn write_sinks(&self) {}
 }
 
 impl Log for Glog {
@@ -245,7 +273,7 @@ impl Log for Glog {
 
     fn log(&self, record: &Record) {
         if !self.enabled(record.metadata()) {
-            return
+            return;
         }
 
         if self.flags.logtostderr || self.flags.alsologtostderr {
@@ -258,7 +286,9 @@ impl Log for Glog {
     }
 
     fn flush(&self) {
-        let stderr_writer = self.stderr_writer.get_or(|| RefCell::new(StandardStream::stderr(ColorChoice::Auto)));
+        let stderr_writer = self
+            .stderr_writer
+            .get_or(|| RefCell::new(StandardStream::stderr(ColorChoice::Auto)));
         let mut stderr_writer = stderr_writer.borrow_mut();
         stderr_writer.flush().ok();
 
@@ -282,7 +312,9 @@ fn get_tid() -> u64 {
 
 #[cfg(target_os = "windows")]
 fn get_tid() -> u64 {
-    bindings::Windows::Win32::System::Threading::GetCurrentThreadId().try_into().unwrap()
+    bindings::Windows::Win32::System::Threading::GetCurrentThreadId()
+        .try_into()
+        .unwrap()
 }
 
 impl Clone for Glog {
@@ -307,4 +339,3 @@ impl Default for Glog {
 pub fn new() -> Glog {
     Glog::new()
 }
-

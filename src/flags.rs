@@ -1,6 +1,6 @@
+use std::{env::temp_dir, ffi::OsString};
+
 use log::Level;
-use std::env::temp_dir;
-use std::ffi::OsString;
 
 #[derive(Debug, Clone)]
 pub struct Flags {
@@ -24,4 +24,3 @@ impl Default for Flags {
         }
     }
 }
-
