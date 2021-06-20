@@ -311,8 +311,9 @@ mod bindings {
 }
 #[cfg(target_os = "windows")]
 fn get_tid() -> u64 {
-    use bindings::Windows::Win32::System::Threading;
-    GetCurrentThreadId().try_into().unwrap()
+    bindings::Windows::Win32::System::Threading::GetCurrentThreadId()
+        .try_into()
+        .unwrap()
 }
 
 impl Clone for Glog {
