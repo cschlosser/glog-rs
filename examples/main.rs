@@ -38,5 +38,10 @@ fn main() {
 
     foo();
 
-    info!("{:?}", Flags { ..Default::default() });
+    info!(
+        "{:?}",
+        Flags {
+            ..Default::default()
+        }
+    );
 }
