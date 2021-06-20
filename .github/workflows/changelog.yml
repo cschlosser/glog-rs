@@ -1,0 +1,16 @@
+name: "Changelog Updated"
+on:
+  pull_request:
+      types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout sources
+      uses: actions/checkout@v2
+    - name: Check if CHANGELOG.md is updated
+      uses: dangoslen/changelog-enforcer@v2
+      with:
+        changeLogPath: 'CHANGELOG.md'
+        skipLabels: 'Skip-Changelog'
