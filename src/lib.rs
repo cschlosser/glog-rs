@@ -1,4 +1,77 @@
-// todo(#2): add documentation
+//! Port of the famous C++ [`glog`] logging style framework.
+//!
+//! It's implemented on top of the [`standard logging`] crate in Rust.
+//!
+//! Default options will be compatible with [`glog`] but there are several customizations possible
+//! to take advantage of more Rust standard features (currently more levels) and additional configurability options.
+//!
+//! [`glog`]: https://github.com/google/glog
+//! [`standard logging`]: https://crates.io/crates/log
+//! [`Trace`]: ../log/enum.Level.html#variant.Trace
+//! [`Debug`]: ../log/enum.Level.html#variant.Debug
+//! [`Info`]: ../log/enum.Level.html#variant.Info
+//!
+//! ## Examples
+//!
+//! ### Basic usage
+//!
+//! ```
+//! use log::*;
+//! use glog::Flags;
+//!
+//! glog::new().init(Flags::default()).unwrap();
+//!
+//! info!("A log message");
+//! ```
+//!
+//! ### Pretty logs on stderr
+//!
+//! By default glog will write to files once initialized.
+//! For colored priniting to stderr you can use these flags:
+//!
+//! ```
+//! use log::*;
+//! use glog::Flags;
+//!
+//! glog::new().init(Flags {
+//!         colorlogtostderr: true,
+//!         alsologtostderr: true, // use logtostderr to only write to stderr and not to files
+//!         ..Default::default()
+//!     }).unwrap();
+//!
+//! info!("This will be visibile on stderr and in a file");
+//! // I0401 12:34:56.987654   123 doc.rs:9] This will be visibile on stderr and in a file
+//! ```
+//!
+//! ### Nonstandard Glog configuration
+//!
+//! [`glog`] doesn't have levels for [`Trace`] and [`Debug`]. Just like Verbose logs in [`glog`] these will
+//! be logged as [`Info`] by default.
+//! As an additional configuration this logging crate offers these levels as different ones as
+//! well.
+//!
+//! ```
+//! use log::*;
+//! use glog::Flags;
+//!
+//! glog::new()
+//!     .reduced_log_levels(false) // Treat DEBUG and TRACE as separate levels
+//!     .with_year(true) // Add the year to the timestamp in the logfile
+//!     .init(Flags {
+//!         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
+//!         logtostderr: true, // don't write to log files
+//!         ..Default::default()
+//!     }).unwrap();
+//!
+//! trace!("A trace message");
+//! debug!("Helpful for debugging");
+//! info!("An informational message");
+//!
+//! // T20210401 12:34:56.000000  1234 doc.rs:14] A trace message
+//! // D20210401 12:34:56.000050  1234 doc.rs:15] Helpful for debugging
+//! // I20210401 12:34:56.000100  1234 doc.rs:16] An informational message
+//! ```
+
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -23,6 +96,7 @@ mod flags;
 
 pub use flags::Flags;
 
+/// The logging structure doing all the heavy lifting
 pub struct Glog {
     stderr_writer: CachedThreadLocal<RefCell<StandardStream>>,
     compatible_verbosity: bool,
@@ -35,6 +109,7 @@ pub struct Glog {
 }
 
 impl Glog {
+    /// Create a new Glog object for logging
     pub fn new() -> Glog {
         Glog {
             stderr_writer: CachedThreadLocal::new(),
@@ -48,6 +123,19 @@ impl Glog {
         }
     }
 
+    /// [`standard logging`]: https://crates.io/crates/log
+    /// Initialize the logging object and register it with the [`standard logging`] frontend
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use log::*;
+    /// use glog::Flags;
+    ///
+    /// glog::new().init(Flags::default()).unwrap();
+    ///
+    /// info!("A log message");
+    /// ```
     pub fn init(&mut self, flags: Flags) -> Result<(), log::SetLoggerError> {
         self.level_integers.insert(Level::Trace, -2);
         self.level_integers.insert(Level::Debug, -1);
@@ -64,16 +152,107 @@ impl Glog {
         log::set_boxed_logger(Box::new(self.clone()))
     }
 
+    /// Enable the year in the log timestamp
+    ///
+    /// By default the year is not part of the timestamp.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use log::*;
+    /// use glog::Flags;
+    ///
+    /// // init of glog happens here in examples
+    ///
+    /// info!("A log message");
+    /// ```
+    ///
+    /// ## With year
+    /// ```
+    /// # use log::*;
+    /// # use glog::Flags;
+    /// glog::new().with_year(true).init(Flags::default()).unwrap();
+    /// // Will log:
+    /// // I20210401 12:34:56.987654   123 doc.rs:4] A log message
+    /// ```
+    ///
+    /// ## Without year
+    /// ```
+    /// # use log::*;
+    /// # use glog::Flags;
+    /// glog::new().with_year(false).init(Flags::default()).unwrap();
+    /// // Will log:
+    /// // I0401 12:34:56.987654   123 doc.rs:4] A log message
+    /// ```
     pub fn with_year(mut self, with_year: bool) -> Self {
         self.compatible_date = !with_year;
         self
     }
 
-    pub fn limited_abbreviations(mut self, limit_abbreviations: bool) -> Self {
+    /// [`Trace`]: ../log/enum.Level.html#variant.Trace
+    /// [`Debug`]: ../log/enum.Level.html#variant.Debug
+    /// [`Info`]: ../log/enum.Level.html#variant.Info
+    /// Change the behavior regarding [`Trace`] and [`Debug`] levels
+    ///
+    /// If `limit_abbreviations` is set to `false` [`Trace`] and [`Debug`] get their own
+    /// levels. Otherwise they will be logged in the [`Info`] level.
+    ///
+    /// By default `reduced_log_levels` is true.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use log::*;
+    /// use glog::Flags;
+    ///
+    /// // glog init happens here
+    ///
+    /// trace!("A trace message");
+    /// debug!("Helpful for debugging");
+    /// info!("An informational message");
+    /// ```
+    ///
+    /// ## With all abbreviations
+    ///
+    /// ```
+    /// # use log::*;
+    /// # use glog::Flags;
+    /// glog::new()
+    ///     .reduced_log_levels(false) // Treat DEBUG and TRACE as separate levels
+    ///     .init(Flags {
+    ///         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
+    ///         logtostderr: true, // don't write to log files
+    ///         ..Default::default()
+    ///     }).unwrap();
+    ///
+    /// // T0401 12:34:56.000000  1234 doc.rs:12] A trace message
+    /// // D0401 12:34:56.000050  1234 doc.rs:13] Helpful for debugging
+    /// // I0401 12:34:56.000100  1234 doc.rs:14] An informational message
+    /// ```
+    ///
+    /// ## With limited abbreviations
+    ///
+    /// ```
+    /// # use log::*;
+    /// # use glog::Flags;
+    /// glog::new()
+    ///     .reduced_log_levels(true) // Treat DEBUG and TRACE are now logged as INFO
+    ///     .init(Flags {
+    ///         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
+    ///         logtostderr: true, // don't write to log files
+    ///         ..Default::default()
+    ///     }).unwrap();
+    ///
+    /// // I0401 12:34:56.000000  1234 doc.rs:12] A trace message
+    /// // I0401 12:34:56.000050  1234 doc.rs:13] Helpful for debugging
+    /// // I0401 12:34:56.000100  1234 doc.rs:14] An informational message
+    /// ```
+    pub fn reduced_log_levels(mut self, limit_abbreviations: bool) -> Self {
         self.compatible_verbosity = limit_abbreviations;
         self
     }
 
+    /// Set `fingerprint` as the application fingerprint in the log file header
     pub fn set_application_fingerprint(mut self, fingerprint: &str) -> Self {
         self.application_fingerprint = Some(fingerprint.to_owned());
         self
@@ -334,6 +513,7 @@ impl Default for Glog {
     }
 }
 
+/// Create a new Glog instance
 pub fn new() -> Glog {
     Glog::new()
 }
