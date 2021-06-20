@@ -37,4 +37,6 @@ fn main() {
     error!("some erro in main while testing the logger");
 
     foo();
+
+    info!("{:?}", Flags { ..Default::default() });
 }

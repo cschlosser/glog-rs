@@ -1,4 +1,4 @@
-use std::{env::temp_dir, ffi::OsString};
+use std::{env::temp_dir, ffi::OsString, path::PathBuf};
 
 use log::Level;
 
@@ -20,7 +20,13 @@ impl Default for Flags {
             log_backtrace_at: None,
             logtostderr: false,
             alsologtostderr: false,
-            log_dir: temp_dir().into_os_string(), // todo(#5): can this be empty?
+            log_dir: [
+                temp_dir().into_os_string(),
+                OsString::from(""), // Users may not append a / or \ to their env vars
+            ]
+            .iter()
+            .collect::<PathBuf>()
+            .into_os_string(),
         }
     }
 }
