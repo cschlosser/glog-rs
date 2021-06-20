@@ -334,3 +334,8 @@ impl Default for Glog {
 pub fn new() -> Glog {
     Glog::new()
 }
+
+#[cfg(test)]
+mod tests {
+    // todo(#6): Fill with tests
+}
