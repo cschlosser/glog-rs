@@ -1,4 +1,4 @@
-// todo: add documentation
+// todo(#2): add documentation
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -58,7 +58,7 @@ impl Glog {
         if !self.flags.logtostderr {
             self.create_log_files();
         }
-        // todo: restore this once this can be changed during runtime for glog
+        // todo(#4): restore this once this can be changed during runtime for glog
         // log::set_max_level(LevelFilter::Trace);
         log::set_max_level(self.flags.minloglevel.to_level_filter());
         log::set_boxed_logger(Box::new(self.clone()))
@@ -102,12 +102,11 @@ impl Glog {
         log_file_name.push(whoami::username().if_empty("invalid-user".to_string()));
         log_file_name.push(".log.");
 
-        // todo: plain String may suffice here
-        let mut log_file_suffix = OsString::new();
-        log_file_suffix.push(".");
-        log_file_suffix.push(Local::now().format("%Y%m%d-%H%M%S").to_string());
-        log_file_suffix.push(".");
-        log_file_suffix.push(std::process::id().to_string());
+        let log_file_suffix = format!(
+            ".{}.{}",
+            Local::now().format("%Y%m%d-%H%M%S").to_string(),
+            std::process::id().to_string()
+        );
 
         let mut log_file_base = OsString::new();
         log_file_base.push(log_file_dir);
@@ -116,14 +115,14 @@ impl Glog {
             for level in vec![Level::Trace, Level::Debug] {
                 let mut log_file_path = log_file_base.clone();
                 log_file_path.push(level.to_string().to_uppercase());
-                log_file_path.push(log_file_suffix.clone());
+                log_file_path.push(log_file_suffix.to_string());
                 self.write_file_header(&log_file_path, &level);
             }
         }
         for level in vec![Level::Info, Level::Warn, Level::Error] {
             let mut log_file_path = log_file_base.clone();
             log_file_path.push(level.to_string().to_uppercase());
-            log_file_path.push(log_file_suffix.clone());
+            log_file_path.push(log_file_suffix.to_string());
             self.write_file_header(&log_file_path, &level);
         }
     }
@@ -141,7 +140,7 @@ impl Glog {
 
             let running_duration = Local::now() - self.start_time;
 
-            // todo: integrate UTC
+            // todo(#3): integrate UTC
             file.write_fmt(
                 format_args!("Log file created at:\n{}\nRunning on machine: {}\n{}Running duration (h:mm:ss): {}:{:02}:{:02}\nLog line format: [{}IWE]{}mmdd hh:mm:ss.uuuuuu threadid file:line] msg\n",
                     Local::now().format("%Y/%m/%d %H:%M:%S"),
@@ -177,7 +176,6 @@ impl Glog {
 
     fn should_log_backtrace(&self, file_name: &str, line: u32) -> bool {
         if self.flags.log_backtrace_at.is_some() {
-            // todo: improve this by formatting this beforehand
             format!("{}:{}", file_name, line) == *self.flags.log_backtrace_at.as_ref().unwrap()
         } else {
             false

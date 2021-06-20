@@ -20,7 +20,7 @@ impl Default for Flags {
             log_backtrace_at: None,
             logtostderr: false,
             alsologtostderr: false,
-            log_dir: temp_dir().into_os_string(), // todo: can this be empty?
+            log_dir: temp_dir().into_os_string(), // todo(#5): can this be empty?
         }
     }
 }
