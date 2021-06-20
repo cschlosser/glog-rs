@@ -1,0 +1,20 @@
+combine_control_expr = false
+wrap_comments = true
+comment_width = 132
+condense_wildcard_suffixes = true
+imports_layout = "HorizontalVertical"
+max_width = 132
+imports_granularity = "Crate"
+newline_style = "Unix"
+normalize_comments = true
+normalize_doc_attributes = true
+reorder_impl_items = true
+reorder_imports = true
+group_imports = "StdExternalCrate"
+reorder_modules = true
+report_fixme = "Unnumbered"
+report_todo = "Unnumbered"
+struct_lit_single_line = false
+
+# Most of these don't work otherwise
+unstable_features = true
