@@ -1,5 +1,7 @@
 # glog for Rust
 
+[![CI](https://github.com/cschlosser/glog-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/cschlosser/glog-rs/actions/workflows/ci.yml)
+
 This is a port of the famous C++ logging framework [glog] as backend for Rusts [standard logging] frontend.
 
 ## Introduction
