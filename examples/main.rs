@@ -1,7 +1,24 @@
+use std::thread;
+
 use glog::Flags;
 use log::*;
 
-mod foo;
+pub fn foo() {
+    let handler = thread::Builder::new()
+        .name("named thread".into())
+        .spawn(|| {
+            let handle = thread::current();
+            info!("from other thread!");
+            debug!("a debug msg");
+            trace!("some tracing");
+            assert_eq!(handle.name(), Some("named thread"));
+        })
+        .unwrap();
+
+    handler.join().unwrap();
+
+    warn!("a warning from foo()");
+}
 
 fn main() {
     glog::new()
@@ -19,5 +36,5 @@ fn main() {
 
     error!("some erro in main while testing the logger");
 
-    foo::foo();
+    foo();
 }

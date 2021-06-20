@@ -92,9 +92,9 @@ impl Glog {
         let mut log_file_name = OsString::new();
         log_file_name.push(
             std::env::current_exe()
-                .unwrap_or(PathBuf::from_str("UNKNOWN").unwrap_or(PathBuf::new()))
+                .unwrap_or_else(|_| PathBuf::from_str("UNKNOWN").unwrap_or_default())
                 .file_name()
-                .unwrap_or(OsStr::new("UNKNOWN")),
+                .unwrap_or_else(|| OsStr::new("UNKNOWN")),
         );
         log_file_name.push(".");
         log_file_name.push(gethostname::gethostname().if_empty(OsString::from("(unknown)")));
@@ -112,18 +112,18 @@ impl Glog {
         log_file_base.push(log_file_dir);
         log_file_base.push(log_file_name);
         if !self.compatible_verbosity {
-            for level in vec![Level::Trace, Level::Debug] {
+            for level in &[Level::Trace, Level::Debug] {
                 let mut log_file_path = log_file_base.clone();
                 log_file_path.push(level.to_string().to_uppercase());
                 log_file_path.push(log_file_suffix.to_string());
-                self.write_file_header(&log_file_path, &level);
+                self.write_file_header(&log_file_path, level);
             }
         }
-        for level in vec![Level::Info, Level::Warn, Level::Error] {
+        for level in &[Level::Info, Level::Warn, Level::Error] {
             let mut log_file_path = log_file_base.clone();
             log_file_path.push(level.to_string().to_uppercase());
             log_file_path.push(log_file_suffix.to_string());
-            self.write_file_header(&log_file_path, &level);
+            self.write_file_header(&log_file_path, level);
         }
     }
 
@@ -154,13 +154,12 @@ impl Glog {
                 )
             ).expect("couldn't write log file header");
 
-            match file.flush() {
-                Err(why) => panic!(
+            if let Err(why) = file.flush() {
+                panic!(
                     "couldn't flush {} after writing file header: {}",
                     file_path.to_str().unwrap(),
                     why
-                ),
-                _ => (),
+                )
             }
         }
         self.file_writer.insert(
@@ -185,16 +184,16 @@ impl Glog {
     fn record_to_file_name(record: &Record) -> String {
         Path::new(record.file().unwrap_or(""))
             .file_name()
-            .unwrap_or(std::ffi::OsStr::new(""))
+            .unwrap_or_default()
             .to_os_string()
             .into_string()
-            .unwrap_or("".to_owned())
+            .unwrap_or_default()
     }
 
     fn build_log_message(&self, record: &Record) -> String {
         format!(
             "{}{} {:5} {}:{}] {}",
-            self.match_level(&record.metadata().level()).as_str().chars().nth(0).unwrap(),
+            self.match_level(&record.metadata().level()).as_str().chars().next().unwrap(),
             Local::now().format(&format!("{}%m%d %H:%M:%S%.6f", if self.compatible_date { "" } else { "%Y" })),
             get_tid(),
             Glog::record_to_file_name(record),
@@ -242,22 +241,20 @@ impl Glog {
         // prevent writing to non existing writer if minloglevel is <INFO
         for level_int in self.level_as_int(&self.flags.minloglevel)..=self.level_as_int(&record.level()) {
             let level = self.level_integers.get_by_right(&level_int).unwrap();
-            let file_write_guard = self.file_writer.get(&level).unwrap().lock().unwrap();
+            let file_write_guard = self.file_writer.get(level).unwrap().lock().unwrap();
             let mut file_writer = (*file_write_guard).borrow_mut();
-            match file_writer.write_fmt(format_args!("{}\n", self.build_log_message(record))) {
-                Err(why) => panic!("couldn't write log message to file for level {}: {}", record.level(), why),
-                _ => (),
-            };
+            if let Err(why) = file_writer.write_fmt(format_args!("{}\n", self.build_log_message(record))) {
+                panic!("couldn't write log message to file for level {}: {}", record.level(), why)
+            }
         }
 
         if self.should_log_backtrace(&Glog::record_to_file_name(record), record.line().unwrap_or(0)) {
             let level = self.match_level(&self.flags.minloglevel);
             let file_write_guard = self.file_writer.get(&level).unwrap().lock().unwrap();
             let mut file_writer = (*file_write_guard).borrow_mut();
-            match file_writer.write_fmt(format_args!("{:?}\n", Backtrace::new())) {
-                Err(why) => panic!("couldn't write backtrace to {} file: {}", level, why),
-                _ => (),
-            };
+            if let Err(why) = file_writer.write_fmt(format_args!("{:?}\n", Backtrace::new())) {
+                panic!("couldn't write backtrace to {} file: {}", level, why)
+            }
         }
     }
 
