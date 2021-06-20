@@ -23,7 +23,7 @@ pub fn foo() {
 fn main() {
     glog::new()
         .with_year(true)
-        .limited_abbreviations(true)
+        .reduced_log_levels(true)
         .set_application_fingerprint("Example")
         .init(Flags {
             colorlogtostderr: true,
