@@ -1,4 +1,75 @@
-// todo(#2): add documentation
+//!
+//! Port of the famous C++ [`glog`] logging style framework.
+//!
+//! It's implemented on top of the [`standard logging`] crate in Rust.
+//!
+//! Default options will be compatible with [`glog`] but there are several customizations possible
+//! to take advantage of more Rust standard features (currently more levels) and additional configurability options.
+//!
+//! [`glog`]: https://github.com/google/glog
+//! [`standard logging`]: https://crates.io/crates/log
+//!
+//! ## Examples
+//!
+//! ### Basic usage
+//!
+//! ```
+//! use log::*;
+//! use glog::Flags;
+//!
+//! glog::new().init(Flags::default()).unwrap();
+//!
+//! info!("A log message");
+//! ```
+//!
+//! ### Pretty logs on stderr
+//!
+//! By default glog will write to files once initialized.
+//! For colored priniting to stderr you can use these flags:
+//!
+//! ```
+//! use log::*;
+//! use glog::Flags;
+//!
+//! glog::new().init(Flags {
+//!         colorlogtostderr: true,
+//!         alsologtostderr: true, // use logtostderr to only write to stderr and not to files
+//!         ..Default::default(),
+//!     }).unwrap();
+//!
+//! info!("This will be visibile on stderr and in a file");
+//! // I0401 12:34:56.987654   123 doc.rs:9]
+//! ```
+//!
+//! ### Nonstandard Glog configuration
+//!
+//! [`glog`] doesn't have levels for Trace and Debug. Just like Verbose logs in [`glog`] these will
+//! be logged as INFO by default.
+//! As an additional configuration this logging crate offers these levels as different ones as
+//! well.
+//!
+//! ```
+//! use log::*;
+//! use glog::Flags;
+//!
+//! glog::new()
+//!     .limited_abbreviations(false) // Treat DEBUG and TRACE as separate levels
+//!     .with_year(true) // Add the year to the timestamp in the logfile
+//!     .init(Flags {
+//!         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
+//!         logtostderr: true, // don't write to log files
+//!         ..Default::default(),
+//!     }).unwrap();
+//!
+//! trace!("A trace message");
+//! debug!("Helpful for debugging");
+//! info!("An informational message");
+//!
+//! // T20210401 12:34:56.000000  1234 doc.rs:14] A trace message
+//! // D20210401 12:34:56.000050  1234 doc.rs:15] Helpful for debugging
+//! // I20210401 12:34:56.000100  1234 doc.rs:16] An informational message
+//! ```
+
 use std::{
     cell::RefCell,
     collections::HashMap,
