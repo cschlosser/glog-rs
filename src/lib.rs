@@ -307,9 +307,7 @@ fn get_tid() -> u64 {
 
 #[cfg(target_os = "windows")]
 fn get_tid() -> u64 {
-    bindings::Windows::Win32::System::Threading::GetCurrentThreadId()
-        .try_into()
-        .unwrap()
+    Windows::Win32::System::Threading::GetCurrentThreadId().try_into().unwrap()
 }
 
 impl Clone for Glog {
