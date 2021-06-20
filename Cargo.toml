@@ -4,6 +4,12 @@ version = "0.1.0"
 authors = ["Christoph Schlosser <christoph@linux.com>"]
 edition = "2018"
 license = "BSD-3-Clause"
+description = "glog style standard logging backend"
+homepage = "https://crates.io/crates/glog"
+repository = "https://github.com/cschlosser/glog-rs"
+readme = "README.md"
+keywords = ["glog", "log", "logging backend"]
+documentation = "https://docs.rs/glog/0.1.0/"
 
 [dependencies]
 log = { version = "0.4.11", features = ["std"] }
