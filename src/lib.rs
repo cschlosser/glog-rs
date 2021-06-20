@@ -311,9 +311,7 @@ mod bindings {
 }
 #[cfg(target_os = "windows")]
 fn get_tid() -> u64 {
-    let win_tid = unsafe {
-        bindings::Windows::Win32::System::Threading::GetCurrentThreadId()
-    };
+    let win_tid = unsafe { bindings::Windows::Win32::System::Threading::GetCurrentThreadId() };
     win_tid.try_into().unwrap()
 }
 
