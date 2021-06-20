@@ -54,7 +54,7 @@ will print `I20210401 12:34:56.987654   123 readme.rs:11] With the year`.
 
 ## Inspirations
 
-This project was inspired by [glog] for the great C++ logging framework and [stderrlog-rs](https://github.com/cardoe/stderrlog-rs) as a kickstarter for a Rust logging backend.
+This project was inspired by the great C++ logging framework [glog] and [stderrlog-rs](https://github.com/cardoe/stderrlog-rs) as a kickstarter for a Rust logging backend.
 
 [glog]: https://github.com/google/glog
 [standard logging]: https://crates.io/crates/log
