@@ -18,4 +18,5 @@ backtrace = "0.3.60"
 gethostname = "0.2.1"
 whoami = "1.1.2"
 if_empty = "0.2.0"
+bimap = "0.6.1"
 

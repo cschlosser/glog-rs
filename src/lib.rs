@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::sync::{Arc, Mutex};
+use bimap::BiMap;
 use if_empty::*;
 
 mod flags;
@@ -29,6 +30,7 @@ pub struct Glog {
     application_fingerprint: Option<String>,
     start_time: DateTime<Local>,
     file_writer: HashMap<Level, Arc<Mutex<RefCell<File>>>>,
+    level_integers: BiMap<Level, i8>,
 }
 
 impl Glog {
@@ -41,9 +43,15 @@ impl Glog {
             application_fingerprint: None,
             start_time: Local::now(),
             file_writer: HashMap::new(),
+            level_integers: BiMap::new(),
         }
     }
     pub fn init(&mut self, flags: Flags) -> Result<(), log::SetLoggerError> {
+        self.level_integers.insert(Level::Trace, -2);
+        self.level_integers.insert(Level::Debug, -1);
+        self.level_integers.insert(Level::Info, 0);
+        self.level_integers.insert(Level::Warn, 1);
+        self.level_integers.insert(Level::Error, 2);
         self.flags = flags;
         if !self.flags.logtostderr {
             self.create_log_files();
@@ -84,7 +92,7 @@ impl Glog {
         log_file_name.push(".");
         log_file_name.push(gethostname::gethostname().if_empty(OsString::from("(unknown)")));
         log_file_name.push(".");
-        log_file_name.push(whoami::username().if_empty(String::from("invalid-user")));
+        log_file_name.push(whoami::username().if_empty("invalid-user".to_string()));
         log_file_name.push(".log.");
 
         // todo: plain String may suffice here
@@ -198,18 +206,35 @@ impl Glog {
         }
     }
 
+    fn level_as_int(&self, level: &Level) -> i8 {
+        *self.level_integers.get_by_left(&self.match_level(level)).unwrap()
+    }
+
     fn write_file(&self, record: &Record) {
-        let level = self.match_level(&record.level());
-        let file_write_guard = self.file_writer.get(&level).unwrap().lock().unwrap();
-        let mut file_writer = (*file_write_guard).borrow_mut();
-        match file_writer.write_fmt(format_args!("{}\n", self.build_log_message(record))) {
-            Err(why) => panic!("couldn't write log message to file for level {}: {}", record.level(), why),
-            _ => (),
-        };
+        // prevent writing to non existing writer if minloglevel is <INFO
+        for level_int in self.level_as_int(&self.flags.minloglevel)..=self.level_as_int(&record.level()) {
+            let level = self.level_integers.get_by_right(&level_int).unwrap();
+            let file_write_guard = self.file_writer.get(&level).unwrap().lock().unwrap();
+            let mut file_writer = (*file_write_guard).borrow_mut();
+            match file_writer.write_fmt(format_args!("{}\n", self.build_log_message(record))) {
+                Err(why) => panic!("couldn't write log message to file for level {}: {}", record.level(), why),
+                _ => (),
+            };
+        }
+
+        if self.should_log_backtrace(&Glog::record_to_file_name(record), record.line().unwrap_or(0)) {
+            let level = self.match_level(&self.flags.minloglevel);
+            let file_write_guard = self.file_writer.get(&level).unwrap().lock().unwrap();
+            let mut file_writer = (*file_write_guard).borrow_mut();
+            match file_writer.write_fmt(format_args!("{:?}\n", Backtrace::new())) {
+                Err(why) => panic!("couldn't write backtrace to {} file: {}", level, why),
+                _ => (),
+            };
+        }
     }
 
     fn write_sinks(&self) {
-    
+
     }
 }
 
@@ -267,6 +292,7 @@ impl Clone for Glog {
             flags: self.flags.clone(),
             application_fingerprint: self.application_fingerprint.clone(),
             file_writer: self.file_writer.clone(),
+            level_integers: self.level_integers.clone(),
             ..*self
         }
     }
