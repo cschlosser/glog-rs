@@ -4,6 +4,11 @@
 
 This is a port of the famous C++ logging framework [glog] as backend for Rusts [standard logging] frontend.
 
+> ⚠️ Stability Warning:
+> Currently there are no tests for this framework.
+> This will be added in the next release.
+> Currently the framework is tested only manually to verify the current featureset.
+
 ## Introduction
 
 `glog-rs` tries to stay as close to [glog] as possible to maintain compatibility, which can be useful in mixed environments using C++ and Rust code at the same time.
