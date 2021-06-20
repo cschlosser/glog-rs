@@ -8,7 +8,7 @@ description = "glog style standard logging backend"
 homepage = "https://crates.io/crates/glog"
 repository = "https://github.com/cschlosser/glog-rs"
 readme = "README.md"
-keywords = ["glog", "log", "logging backend"]
+keywords = ["glog", "log", "logging", "backend"]
 documentation = "https://docs.rs/glog/0.1.0/"
 
 [dependencies]
