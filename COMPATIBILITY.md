@@ -2,6 +2,13 @@
 
 ## Missing features
 
+- [ ] Logging to files
+  - [x] Writing header
+  - [x] Writing log entries
+  - [x] Writing backtrace
+  - [ ] Symlinks
+  - [ ] Filesize limits
+  - [ ] Filerotation
 - [ ] `LOG_IF` macros
 - [ ] `VLOG` macros
 - [ ] `CHECK` macros
@@ -11,8 +18,12 @@
 - [ ] Flags
   - [ ] Logging in UTC #3
   - [ ] Change some flags during runtime #4
+  - [ ] Remove extensions from filename
 
 ## glog-rs extensions
 
+- [x] `TRACE` and `DEBUG` levels
 - [ ] Filepath instead of filename
 - [ ] Crate in addition to filepath/filename
+- [ ] Flags
+  - [x] Year in log timestamp
