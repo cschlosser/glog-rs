@@ -95,16 +95,29 @@ use thread_local::CachedThreadLocal;
 
 mod flags;
 pub mod macros;
+pub use flags::Extensions;
 pub use flags::Flags;
 
 pub static LOGGER: OnceCell<Glogger> = OnceCell::new();
 
-pub fn init(flags: Flags) -> Result<(), log::SetLoggerError> {
+/// [`standard logging`]: https://crates.io/crates/log
+/// Initialize the logging object and register it with the [`standard logging`] frontend
+///
+/// # Example
+///
+/// ```
+/// use log::*;
+/// use glog::Flags;
+///
+/// glog::new().init(Flags::default()).unwrap();
+///
+/// info!("A log message");
+/// ```
+pub fn init(flags: Flags, extensions: Option<Extensions>) -> Result<(), log::SetLoggerError> {
     let logger = LOGGER.get_or_init(|| {
         let mut l = Glogger {
             stderr_writer: CachedThreadLocal::new(),
-            compatible_verbosity: true,
-            compatible_date: true,
+            extensions: Extensions::default(),
             flags: Flags::default(),
             application_fingerprint: None,
             start_time: Local::now(),
@@ -125,6 +138,10 @@ pub fn init(flags: Flags) -> Result<(), log::SetLoggerError> {
         // log::set_max_level(LevelFilter::Trace);
         log::set_max_level(flags.minloglevel.to_level_filter());
         l.flags = flags;
+        match extensions {
+            None => (),
+            Some(extensions) => l.extensions = extensions,
+        }
         l
     });
     log::set_logger(logger)
@@ -198,8 +215,7 @@ impl Level {
 /// The logging structure doing all the heavy lifting
 pub struct Glogger {
     stderr_writer: CachedThreadLocal<RefCell<StandardStream>>,
-    compatible_verbosity: bool,
-    compatible_date: bool,
+    extensions: Extensions,
     flags: Flags,
     application_fingerprint: Option<String>,
     start_time: DateTime<Local>,
@@ -207,106 +223,6 @@ pub struct Glogger {
     level_integers: BiMap<Level, i8>,
 }
 impl Glogger {
-    /// Enable the year in the log timestamp
-    ///
-    /// By default the year is not part of the timestamp.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use log::*;
-    /// use glog::Flags;
-    ///
-    /// // init of glog happens here in examples
-    ///
-    /// info!("A log message");
-    /// ```
-    ///
-    /// ## With year
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new().with_year(true).init(Flags::default()).unwrap();
-    /// // Will log:
-    /// // I20210401 12:34:56.987654   123 doc.rs:4] A log message
-    /// ```
-    ///
-    /// ## Without year
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new().with_year(false).init(Flags::default()).unwrap();
-    /// // Will log:
-    /// // I0401 12:34:56.987654   123 doc.rs:4] A log message
-    /// ```
-    pub fn with_year(mut self, with_year: bool) -> Self {
-        self.compatible_date = !with_year;
-        self
-    }
-
-    /// [`Trace`]: ../log/enum.Level.html#variant.Trace
-    /// [`Debug`]: ../log/enum.Level.html#variant.Debug
-    /// [`Info`]: ../log/enum.Level.html#variant.Info
-    /// Change the behavior regarding [`Trace`] and [`Debug`] levels
-    ///
-    /// If `limit_abbreviations` is set to `false` [`Trace`] and [`Debug`] get their own
-    /// levels. Otherwise they will be logged in the [`Info`] level.
-    ///
-    /// By default `reduced_log_levels` is true.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use log::*;
-    /// use glog::Flags;
-    ///
-    /// // glog init happens here
-    ///
-    /// trace!("A trace message");
-    /// debug!("Helpful for debugging");
-    /// info!("An informational message");
-    /// ```
-    ///
-    /// ## With all abbreviations
-    ///
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new()
-    ///     .reduced_log_levels(false) // Treat DEBUG and TRACE as separate levels
-    ///     .init(Flags {
-    ///         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
-    ///         logtostderr: true, // don't write to log files
-    ///         ..Default::default()
-    ///     }).unwrap();
-    ///
-    /// // T0401 12:34:56.000000  1234 doc.rs:12] A trace message
-    /// // D0401 12:34:56.000050  1234 doc.rs:13] Helpful for debugging
-    /// // I0401 12:34:56.000100  1234 doc.rs:14] An informational message
-    /// ```
-    ///
-    /// ## With limited abbreviations
-    ///
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new()
-    ///     .reduced_log_levels(true) // Treat DEBUG and TRACE are now logged as INFO
-    ///     .init(Flags {
-    ///         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
-    ///         logtostderr: true, // don't write to log files
-    ///         ..Default::default()
-    ///     }).unwrap();
-    ///
-    /// // I0401 12:34:56.000000  1234 doc.rs:12] A trace message
-    /// // I0401 12:34:56.000050  1234 doc.rs:13] Helpful for debugging
-    /// // I0401 12:34:56.000100  1234 doc.rs:14] An informational message
-    /// ```
-    pub fn reduced_log_levels(mut self, limit_abbreviations: bool) -> Self {
-        self.compatible_verbosity = limit_abbreviations;
-        self
-    }
-
     /// Set `fingerprint` as the application fingerprint in the log file header
     pub fn set_application_fingerprint(mut self, fingerprint: &str) -> Self {
         self.application_fingerprint = Some(fingerprint.to_owned());
@@ -315,8 +231,8 @@ impl Glogger {
 
     fn match_level(&self, level: &Level) -> Level {
         match level {
-            Level::Debug if self.compatible_verbosity => Level::Info,
-            Level::Trace if self.compatible_verbosity => Level::Info,
+            Level::Debug if !self.extensions.with_rust_levels => Level::Info,
+            Level::Trace if !self.extensions.with_rust_levels => Level::Info,
             _ => *level,
         }
     }
@@ -345,7 +261,7 @@ impl Glogger {
         let mut log_file_base = OsString::new();
         log_file_base.push(log_file_dir);
         log_file_base.push(log_file_name);
-        if !self.compatible_verbosity {
+        if self.extensions.with_rust_levels {
             for level in &[Level::Trace, Level::Debug] {
                 let mut log_file_path = log_file_base.clone();
                 log_file_path.push(level.to_string().to_uppercase());
@@ -353,7 +269,7 @@ impl Glogger {
                 self.write_file_header(&log_file_path, level);
             }
         }
-        for level in &[Level::Info, Level::Warn, Level::Error] {
+        for level in &[Level::Info, Level::Warn, Level::Error, Level::Fatal] {
             let mut log_file_path = log_file_base.clone();
             log_file_path.push(level.to_string().to_uppercase());
             log_file_path.push(log_file_suffix.to_string());
@@ -383,8 +299,8 @@ impl Glogger {
                     running_duration.num_hours(),
                     running_duration.num_minutes(),
                     running_duration.num_seconds(),
-                    if self.compatible_verbosity { "" } else { "TD" },
-                    if self.compatible_date { "" } else { "yyyy" },
+                    if self.extensions.with_rust_levels { "TD" } else { "" },
+                    if self.extensions.with_year { "yyyy" } else { "" },
                 )
             ).expect("couldn't write log file header");
 
@@ -428,7 +344,10 @@ impl Glogger {
         format!(
             "{}{} {:5} {}:{}] {}",
             self.match_level(&record.level).as_str().chars().next().unwrap(),
-            Local::now().format(&format!("{}%m%d %H:%M:%S%.6f", if self.compatible_date { "" } else { "%Y" })),
+            Local::now().format(&format!(
+                "{}%m%d %H:%M:%S%.6f",
+                if self.extensions.with_year { "%Y" } else { "" }
+            )),
             get_tid(),
             record.file,
             record.line,
@@ -543,12 +462,6 @@ impl Log for Glogger {
     }
 }
 
-impl std::fmt::Debug for Glogger {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn get_tid() -> u64 {
     nix::sys::pthread::pthread_self().try_into().unwrap()
@@ -569,19 +482,6 @@ fn get_tid() -> u64 {
     win_tid.try_into().unwrap()
 }
 
-/// [`standard logging`]: https://crates.io/crates/log
-/// Initialize the logging object and register it with the [`standard logging`] frontend
-///
-/// # Example
-///
-/// ```
-/// use log::*;
-/// use glog::Flags;
-///
-/// glog::new().init(Flags::default()).unwrap();
-///
-/// info!("A log message");
-/// ```
 #[cfg(test)]
 mod tests {
     // todo(#6): Fill with tests
