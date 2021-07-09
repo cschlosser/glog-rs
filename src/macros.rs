@@ -5,7 +5,7 @@
 #[macro_export]
 macro_rules! fatal {
     ($($arg:tt)+) => {{
-        let logger = $crate::GLOG.logger.read().unwrap();
+        let logger = $crate::logger();
         let file_path = std::path::Path::new(file!());
         let file_name = file_path.file_name().unwrap_or_default().to_str().unwrap_or_default();
         let record = $crate::Record {

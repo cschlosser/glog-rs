@@ -35,13 +35,13 @@ fn main() {
     foo();
 
     info!("Still default");
-    glog::Glogger::enable_extensions(Extensions {
+    glog::logger().enable_extensions(Extensions {
         with_year: true,
         ..Default::default()
     });
     debug!("With year");
-    glog::Glogger::with_year(false);
-    glog::Glogger::reduced_log_levels(false);
+    glog::logger().with_year(false);
+    glog::logger().reduced_log_levels(false);
     trace!("Without year again but with additional severity levels now");
 
     fatal!("This will stop the application");
