@@ -19,7 +19,7 @@
 //! use log::*;
 //! use glog::Flags;
 //!
-//! glog::new().init(Flags::default()).unwrap();
+//! glog::init(Flags::default()).unwrap();
 //!
 //! info!("A log message");
 //! ```
@@ -33,7 +33,7 @@
 //! use log::*;
 //! use glog::Flags;
 //!
-//! glog::new().init(Flags {
+//! glog::init(Flags {
 //!         colorlogtostderr: true,
 //!         alsologtostderr: true, // use logtostderr to only write to stderr and not to files
 //!         ..Default::default()
@@ -81,7 +81,7 @@ use std::{
     io::{LineWriter, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard},
 };
 
 use backtrace::Backtrace;
@@ -89,7 +89,7 @@ use bimap::BiMap;
 use chrono::{DateTime, Local};
 use if_empty::*;
 use log::{Log, Metadata};
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use thread_local::CachedThreadLocal;
 
@@ -97,8 +97,62 @@ mod flags;
 pub mod macros;
 pub use flags::Extensions;
 pub use flags::Flags;
+/*
+pub fn logger() -> RwLockReadGuard<'static, Glogger> {
+    GLOG.logger.read().unwrap()
+}
 
-pub static LOGGER: OnceCell<Glogger> = OnceCell::new();
+#[doc(hidden)]
+fn logger_internal() -> &'static RwLock<Glogger> {
+    static LOGGER: Lazy<RwLock<Glogger>> = Lazy::new(|| {
+        let mut logger = Glogger {
+            stderr_writer: CachedThreadLocal::new(),
+            extensions: Extensions::default(),
+            flags: Flags::default(),
+            application_fingerprint: None,
+            start_time: Local::now(),
+            file_writer: HashMap::new(),
+            level_integers: BiMap::new(),
+            initialized: false,
+        };
+        logger.level_integers.insert(Level::Verbose, -3);
+        logger.level_integers.insert(Level::Trace, -2);
+        logger.level_integers.insert(Level::Debug, -1);
+        logger.level_integers.insert(Level::Info, 0);
+        logger.level_integers.insert(Level::Warn, 1);
+        logger.level_integers.insert(Level::Error, 2);
+        logger.level_integers.insert(Level::Fatal, 3);
+        RwLock::new(logger)
+    });
+    &LOGGER
+}*/
+
+pub struct Glog {
+    pub logger: Lazy<RwLock<Glogger>>,
+}
+
+pub static GLOG: Glog = Glog {
+    logger: Lazy::new(|| {
+        let mut logger = Glogger {
+            stderr_writer: CachedThreadLocal::new(),
+            extensions: Extensions::default(),
+            flags: Flags::default(),
+            application_fingerprint: None,
+            start_time: Local::now(),
+            file_writer: HashMap::new(),
+            level_integers: BiMap::new(),
+            initialized: false,
+        };
+        logger.level_integers.insert(Level::Verbose, -3);
+        logger.level_integers.insert(Level::Trace, -2);
+        logger.level_integers.insert(Level::Debug, -1);
+        logger.level_integers.insert(Level::Info, 0);
+        logger.level_integers.insert(Level::Warn, 1);
+        logger.level_integers.insert(Level::Error, 2);
+        logger.level_integers.insert(Level::Fatal, 3);
+        RwLock::new(logger)
+    }),
+};
 
 /// [`standard logging`]: https://crates.io/crates/log
 /// Initialize the logging object and register it with the [`standard logging`] frontend
@@ -109,49 +163,25 @@ pub static LOGGER: OnceCell<Glogger> = OnceCell::new();
 /// use log::*;
 /// use glog::Flags;
 ///
-/// glog::new().init(Flags::default()).unwrap();
+/// glog::init(Flags::default()).unwrap();
 ///
 /// info!("A log message");
 /// ```
-pub fn init(flags: Flags, fingerprint: Option<String>, extensions: Option<Extensions>) -> Result<(), log::SetLoggerError> {
-    let logger = LOGGER.get_or_init(|| {
-        let mut l = Glogger {
-            stderr_writer: CachedThreadLocal::new(),
-            extensions: Extensions::default(),
-            flags: Flags::default(),
-            application_fingerprint: None,
-            start_time: Local::now(),
-            file_writer: HashMap::new(),
-            level_integers: BiMap::new(),
-        };
-        l.level_integers.insert(Level::Verbose, -3);
-        l.level_integers.insert(Level::Trace, -2);
-        l.level_integers.insert(Level::Debug, -1);
-        l.level_integers.insert(Level::Info, 0);
-        l.level_integers.insert(Level::Warn, 1);
-        l.level_integers.insert(Level::Error, 2);
-        l.level_integers.insert(Level::Fatal, 3);
-        if !flags.logtostderr {
-            l.create_log_files();
+pub fn init(flags: Flags) -> Result<(), log::SetLoggerError> {
+    if (*GLOG.logger.read().unwrap()).initialized {
+        Ok(())
+    } else {
+        let logger_ = &mut *GLOG.logger.write().unwrap();
+        if !flags.logtostderr && logger_.file_writer.is_empty() {
+            logger_.create_log_files();
         }
         // todo(#4): restore this once this can be changed during runtime for glog
         // log::set_max_level(LevelFilter::Trace);
         log::set_max_level(flags.minloglevel.to_level_filter());
-        l.flags = flags;
-        match extensions {
-            None => (),
-            Some(extensions) => l.extensions = extensions,
-        }
-        l.application_fingerprint = fingerprint;
-        l
-    });
-    log::set_logger(logger)
-}
-
-pub fn logger() -> Option<RefCell<&'static Glogger>> {
-    match LOGGER.get() {
-        Some(logger) => Some(RefCell::new(logger)),
-        None => None,
+        logger_.flags = flags;
+        log::set_logger(&GLOG)?;
+        logger_.initialized = true;
+        Ok(())
     }
 }
 
@@ -222,8 +252,32 @@ pub struct Glogger {
     start_time: DateTime<Local>,
     file_writer: HashMap<Level, Arc<Mutex<RefCell<File>>>>,
     level_integers: BiMap<Level, i8>,
+    pub initialized: bool,
 }
+
 impl Glogger {
+    pub fn enable_extensions(extensions: Extensions) {
+        (*GLOG.logger.write().unwrap()).extensions = extensions;
+    }
+    pub fn with_year(with_year: bool) {
+        (*GLOG.logger.write().unwrap()).extensions.with_year = with_year;
+    }
+    pub fn reduced_log_levels(limit_severity_abbreviations: bool) {
+        (*GLOG.logger.write().unwrap()).extensions.with_rust_levels = !limit_severity_abbreviations;
+    }
+    pub fn set_application_fingerprint(fingerprint: &str) {
+        (*GLOG.logger.write().unwrap()).application_fingerprint = Some(fingerprint.to_owned());
+    }
+    pub fn log_internal(&self, record: &Record) {
+        if self.flags.logtostderr || self.flags.alsologtostderr {
+            self.write_stderr(record);
+        }
+        if !self.flags.logtostderr && !self.file_writer.is_empty() {
+            self.write_file(record);
+        }
+        self.write_sinks();
+    }
+
     fn match_level(&self, level: &Level) -> Level {
         match level {
             Level::Debug if !self.extensions.with_rust_levels => Level::Info,
@@ -406,16 +460,6 @@ impl Glogger {
     }
 
     fn write_sinks(&self) {}
-
-    pub fn log_internal(&self, record: &Record) {
-        if self.flags.logtostderr || self.flags.alsologtostderr {
-            self.write_stderr(record);
-        }
-        if !self.flags.logtostderr {
-            self.write_file(record);
-        }
-        self.write_sinks();
-    }
 }
 pub struct Record<'a> {
     pub line: u32,
@@ -424,9 +468,9 @@ pub struct Record<'a> {
     pub level: Level,
 }
 
-impl Log for Glogger {
+impl Log for Glog {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        self.flags.minloglevel >= metadata.level()
+        (*self.logger.read().unwrap()).flags.minloglevel >= metadata.level()
     }
 
     fn log(&self, r: &log::Record) {
@@ -439,17 +483,18 @@ impl Log for Glogger {
             file: &Glogger::record_to_file_name(r),
             level: Level::from(r.metadata().level()),
         };
-        self.log_internal(&record);
+        (*self.logger.read().unwrap()).log_internal(&record);
     }
 
     fn flush(&self) {
-        let stderr_writer = self
+        let logger = &*self.logger.read().unwrap();
+        let stderr_writer = logger
             .stderr_writer
             .get_or(|| RefCell::new(StandardStream::stderr(ColorChoice::Auto)));
         let mut stderr_writer = stderr_writer.borrow_mut();
         stderr_writer.flush().ok();
 
-        for file in self.file_writer.values() {
+        for file in logger.file_writer.values() {
             let file_guard = file.lock().unwrap();
             let mut file_writer = (*file_guard).borrow_mut();
             file_writer.flush().expect("couldn't sync log to disk");
