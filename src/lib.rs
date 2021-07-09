@@ -43,7 +43,7 @@
 //! // I0401 12:34:56.987654   123 doc.rs:9] This will be visibile on stderr and in a file
 //! ```
 //!
-//! ### Nonstandard Glog configuration
+//! ### Nonstandard Glogger configuration
 //!
 //! [`glog`] doesn't have levels for [`Trace`] and [`Debug`]. Just like Verbose logs in [`glog`] these will
 //! be logged as [`Info`] by default.
@@ -88,180 +88,146 @@ use backtrace::Backtrace;
 use bimap::BiMap;
 use chrono::{DateTime, Local};
 use if_empty::*;
-use log::{Level, Log, Metadata, Record};
+use log::{Log, Metadata};
+use once_cell::sync::OnceCell;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use thread_local::CachedThreadLocal;
 
 mod flags;
-
+pub mod macros;
+pub use flags::Extensions;
 pub use flags::Flags;
 
+pub static LOGGER: OnceCell<Glogger> = OnceCell::new();
+
+/// [`standard logging`]: https://crates.io/crates/log
+/// Initialize the logging object and register it with the [`standard logging`] frontend
+///
+/// # Example
+///
+/// ```
+/// use log::*;
+/// use glog::Flags;
+///
+/// glog::new().init(Flags::default()).unwrap();
+///
+/// info!("A log message");
+/// ```
+pub fn init(flags: Flags, fingerprint: Option<String>, extensions: Option<Extensions>) -> Result<(), log::SetLoggerError> {
+    let logger = LOGGER.get_or_init(|| {
+        let mut l = Glogger {
+            stderr_writer: CachedThreadLocal::new(),
+            extensions: Extensions::default(),
+            flags: Flags::default(),
+            application_fingerprint: None,
+            start_time: Local::now(),
+            file_writer: HashMap::new(),
+            level_integers: BiMap::new(),
+        };
+        l.level_integers.insert(Level::Verbose, -3);
+        l.level_integers.insert(Level::Trace, -2);
+        l.level_integers.insert(Level::Debug, -1);
+        l.level_integers.insert(Level::Info, 0);
+        l.level_integers.insert(Level::Warn, 1);
+        l.level_integers.insert(Level::Error, 2);
+        l.level_integers.insert(Level::Fatal, 3);
+        if !flags.logtostderr {
+            l.create_log_files();
+        }
+        // todo(#4): restore this once this can be changed during runtime for glog
+        // log::set_max_level(LevelFilter::Trace);
+        log::set_max_level(flags.minloglevel.to_level_filter());
+        l.flags = flags;
+        match extensions {
+            None => (),
+            Some(extensions) => l.extensions = extensions,
+        }
+        l.application_fingerprint = fingerprint;
+        l
+    });
+    log::set_logger(logger)
+}
+
+pub fn logger() -> Option<RefCell<&'static Glogger>> {
+    match LOGGER.get() {
+        Some(logger) => Some(RefCell::new(logger)),
+        None => None,
+    }
+}
+
+#[repr(isize)]
+#[derive(Copy, Eq, Debug, Hash)]
+pub enum Level {
+    Verbose = -3,
+    Trace = -2,
+    Debug = -1,
+    Info = 0,
+    Warn = 1,
+    Error = 2,
+    Fatal = 3,
+}
+
+impl Clone for Level {
+    #[inline]
+    fn clone(&self) -> Level {
+        *self
+    }
+}
+
+impl PartialEq for Level {
+    #[inline]
+    fn eq(&self, other: &Level) -> bool {
+        *self as usize == *other as usize
+    }
+}
+
+impl std::fmt::Display for Level {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.pad(self.as_str())
+    }
+}
+
+impl From<log::Level> for Level {
+    fn from(level: log::Level) -> Self {
+        match level {
+            log::Level::Trace => Level::Trace,
+            log::Level::Debug => Level::Debug,
+            log::Level::Info => Level::Info,
+            log::Level::Warn => Level::Warn,
+            log::Level::Error => Level::Error,
+        }
+    }
+}
+
+impl Level {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Level::Verbose => "Verbose",
+            Level::Trace => "Trace",
+            Level::Debug => "Debug",
+            Level::Info => "Info",
+            Level::Warn => "Warn",
+            Level::Error => "Error",
+            Level::Fatal => "Fatal",
+        }
+    }
+}
+
 /// The logging structure doing all the heavy lifting
-pub struct Glog {
+pub struct Glogger {
     stderr_writer: CachedThreadLocal<RefCell<StandardStream>>,
-    compatible_verbosity: bool,
-    compatible_date: bool,
+    extensions: Extensions,
     flags: Flags,
     application_fingerprint: Option<String>,
     start_time: DateTime<Local>,
     file_writer: HashMap<Level, Arc<Mutex<RefCell<File>>>>,
     level_integers: BiMap<Level, i8>,
 }
-
-impl Glog {
-    /// Create a new Glog object for logging
-    pub fn new() -> Glog {
-        Glog {
-            stderr_writer: CachedThreadLocal::new(),
-            compatible_verbosity: true,
-            compatible_date: true,
-            flags: Flags::default(),
-            application_fingerprint: None,
-            start_time: Local::now(),
-            file_writer: HashMap::new(),
-            level_integers: BiMap::new(),
-        }
-    }
-
-    /// [`standard logging`]: https://crates.io/crates/log
-    /// Initialize the logging object and register it with the [`standard logging`] frontend
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use log::*;
-    /// use glog::Flags;
-    ///
-    /// glog::new().init(Flags::default()).unwrap();
-    ///
-    /// info!("A log message");
-    /// ```
-    pub fn init(&mut self, flags: Flags) -> Result<(), log::SetLoggerError> {
-        self.level_integers.insert(Level::Trace, -2);
-        self.level_integers.insert(Level::Debug, -1);
-        self.level_integers.insert(Level::Info, 0);
-        self.level_integers.insert(Level::Warn, 1);
-        self.level_integers.insert(Level::Error, 2);
-        self.flags = flags;
-        if !self.flags.logtostderr {
-            self.create_log_files();
-        }
-        // todo(#4): restore this once this can be changed during runtime for glog
-        // log::set_max_level(LevelFilter::Trace);
-        log::set_max_level(self.flags.minloglevel.to_level_filter());
-        log::set_boxed_logger(Box::new(self.clone()))
-    }
-
-    /// Enable the year in the log timestamp
-    ///
-    /// By default the year is not part of the timestamp.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use log::*;
-    /// use glog::Flags;
-    ///
-    /// // init of glog happens here in examples
-    ///
-    /// info!("A log message");
-    /// ```
-    ///
-    /// ## With year
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new().with_year(true).init(Flags::default()).unwrap();
-    /// // Will log:
-    /// // I20210401 12:34:56.987654   123 doc.rs:4] A log message
-    /// ```
-    ///
-    /// ## Without year
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new().with_year(false).init(Flags::default()).unwrap();
-    /// // Will log:
-    /// // I0401 12:34:56.987654   123 doc.rs:4] A log message
-    /// ```
-    pub fn with_year(mut self, with_year: bool) -> Self {
-        self.compatible_date = !with_year;
-        self
-    }
-
-    /// [`Trace`]: ../log/enum.Level.html#variant.Trace
-    /// [`Debug`]: ../log/enum.Level.html#variant.Debug
-    /// [`Info`]: ../log/enum.Level.html#variant.Info
-    /// Change the behavior regarding [`Trace`] and [`Debug`] levels
-    ///
-    /// If `limit_abbreviations` is set to `false` [`Trace`] and [`Debug`] get their own
-    /// levels. Otherwise they will be logged in the [`Info`] level.
-    ///
-    /// By default `reduced_log_levels` is true.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use log::*;
-    /// use glog::Flags;
-    ///
-    /// // glog init happens here
-    ///
-    /// trace!("A trace message");
-    /// debug!("Helpful for debugging");
-    /// info!("An informational message");
-    /// ```
-    ///
-    /// ## With all abbreviations
-    ///
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new()
-    ///     .reduced_log_levels(false) // Treat DEBUG and TRACE as separate levels
-    ///     .init(Flags {
-    ///         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
-    ///         logtostderr: true, // don't write to log files
-    ///         ..Default::default()
-    ///     }).unwrap();
-    ///
-    /// // T0401 12:34:56.000000  1234 doc.rs:12] A trace message
-    /// // D0401 12:34:56.000050  1234 doc.rs:13] Helpful for debugging
-    /// // I0401 12:34:56.000100  1234 doc.rs:14] An informational message
-    /// ```
-    ///
-    /// ## With limited abbreviations
-    ///
-    /// ```
-    /// # use log::*;
-    /// # use glog::Flags;
-    /// glog::new()
-    ///     .reduced_log_levels(true) // Treat DEBUG and TRACE are now logged as INFO
-    ///     .init(Flags {
-    ///         minloglevel: Level::Trace, // By default glog will only log INFO and more severe
-    ///         logtostderr: true, // don't write to log files
-    ///         ..Default::default()
-    ///     }).unwrap();
-    ///
-    /// // I0401 12:34:56.000000  1234 doc.rs:12] A trace message
-    /// // I0401 12:34:56.000050  1234 doc.rs:13] Helpful for debugging
-    /// // I0401 12:34:56.000100  1234 doc.rs:14] An informational message
-    /// ```
-    pub fn reduced_log_levels(mut self, limit_abbreviations: bool) -> Self {
-        self.compatible_verbosity = limit_abbreviations;
-        self
-    }
-
-    /// Set `fingerprint` as the application fingerprint in the log file header
-    pub fn set_application_fingerprint(mut self, fingerprint: &str) -> Self {
-        self.application_fingerprint = Some(fingerprint.to_owned());
-        self
-    }
-
+impl Glogger {
     fn match_level(&self, level: &Level) -> Level {
         match level {
-            Level::Debug if self.compatible_verbosity => Level::Info,
-            Level::Trace if self.compatible_verbosity => Level::Info,
+            Level::Debug if !self.extensions.with_rust_levels => Level::Info,
+            Level::Trace if !self.extensions.with_rust_levels => Level::Info,
             _ => *level,
         }
     }
@@ -290,7 +256,7 @@ impl Glog {
         let mut log_file_base = OsString::new();
         log_file_base.push(log_file_dir);
         log_file_base.push(log_file_name);
-        if !self.compatible_verbosity {
+        if self.extensions.with_rust_levels {
             for level in &[Level::Trace, Level::Debug] {
                 let mut log_file_path = log_file_base.clone();
                 log_file_path.push(level.to_string().to_uppercase());
@@ -298,7 +264,7 @@ impl Glog {
                 self.write_file_header(&log_file_path, level);
             }
         }
-        for level in &[Level::Info, Level::Warn, Level::Error] {
+        for level in &[Level::Info, Level::Warn, Level::Error, Level::Fatal] {
             let mut log_file_path = log_file_base.clone();
             log_file_path.push(level.to_string().to_uppercase());
             log_file_path.push(log_file_suffix.to_string());
@@ -328,8 +294,8 @@ impl Glog {
                     running_duration.num_hours(),
                     running_duration.num_minutes(),
                     running_duration.num_seconds(),
-                    if self.compatible_verbosity { "" } else { "TD" },
-                    if self.compatible_date { "" } else { "yyyy" },
+                    if self.extensions.with_rust_levels { "TD" } else { "" },
+                    if self.extensions.with_year { "yyyy" } else { "" },
                 )
             ).expect("couldn't write log file header");
 
@@ -360,7 +326,7 @@ impl Glog {
         }
     }
 
-    fn record_to_file_name(record: &Record) -> String {
+    fn record_to_file_name(record: &log::Record) -> String {
         Path::new(record.file().unwrap_or(""))
             .file_name()
             .unwrap_or_default()
@@ -372,12 +338,15 @@ impl Glog {
     fn build_log_message(&self, record: &Record) -> String {
         format!(
             "{}{} {:5} {}:{}] {}",
-            self.match_level(&record.metadata().level()).as_str().chars().next().unwrap(),
-            Local::now().format(&format!("{}%m%d %H:%M:%S%.6f", if self.compatible_date { "" } else { "%Y" })),
+            self.match_level(&record.level).as_str().chars().next().unwrap(),
+            Local::now().format(&format!(
+                "{}%m%d %H:%M:%S%.6f",
+                if self.extensions.with_year { "%Y" } else { "" }
+            )),
             get_tid(),
-            Glog::record_to_file_name(record),
-            record.line().unwrap(),
-            record.args(),
+            record.file,
+            record.line,
+            record.args,
         )
     }
 
@@ -391,7 +360,8 @@ impl Glog {
         if self.flags.colorlogtostderr {
             stderr_writer
                 .get_mut()
-                .set_color(ColorSpec::new().set_fg(match record.metadata().level() {
+                .set_color(ColorSpec::new().set_fg(match record.level {
+                    Level::Fatal => Some(Color::Red),
                     Level::Error => Some(Color::Red),
                     Level::Warn => Some(Color::Yellow),
                     _ => None,
@@ -399,15 +369,13 @@ impl Glog {
                 .expect("failed to set color");
         }
 
-        let file_name = Glog::record_to_file_name(record);
-
         writeln!(stderr_writer, "{}", self.build_log_message(record)).expect("couldn't write log message");
 
         if self.flags.colorlogtostderr {
             stderr_writer.get_mut().reset().expect("failed to reset color");
         }
 
-        if self.should_log_backtrace(&file_name, record.line().unwrap_or(0)) {
+        if self.should_log_backtrace(record.file, record.line) {
             writeln!(stderr_writer, "{:?}", Backtrace::new()).expect("Couldn't write backtrace");
         }
     }
@@ -418,17 +386,17 @@ impl Glog {
 
     fn write_file(&self, record: &Record) {
         // prevent writing to non existing writer if minloglevel is <INFO
-        for level_int in self.level_as_int(&self.flags.minloglevel)..=self.level_as_int(&record.level()) {
+        for level_int in self.level_as_int(&Level::from(self.flags.minloglevel))..=self.level_as_int(&record.level) {
             let level = self.level_integers.get_by_right(&level_int).unwrap();
             let file_write_guard = self.file_writer.get(level).unwrap().lock().unwrap();
             let mut file_writer = (*file_write_guard).borrow_mut();
             if let Err(why) = file_writer.write_fmt(format_args!("{}\n", self.build_log_message(record))) {
-                panic!("couldn't write log message to file for level {}: {}", record.level(), why)
+                panic!("couldn't write log message to file for level {}: {}", record.level, why)
             }
         }
 
-        if self.should_log_backtrace(&Glog::record_to_file_name(record), record.line().unwrap_or(0)) {
-            let level = self.match_level(&self.flags.minloglevel);
+        if self.should_log_backtrace(record.file, record.line) {
+            let level = self.match_level(&Level::from(self.flags.minloglevel));
             let file_write_guard = self.file_writer.get(&level).unwrap().lock().unwrap();
             let mut file_writer = (*file_write_guard).borrow_mut();
             if let Err(why) = file_writer.write_fmt(format_args!("{:?}\n", Backtrace::new())) {
@@ -438,18 +406,8 @@ impl Glog {
     }
 
     fn write_sinks(&self) {}
-}
 
-impl Log for Glog {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        self.flags.minloglevel >= metadata.level()
-    }
-
-    fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-
+    pub fn log_internal(&self, record: &Record) {
         if self.flags.logtostderr || self.flags.alsologtostderr {
             self.write_stderr(record);
         }
@@ -457,6 +415,31 @@ impl Log for Glog {
             self.write_file(record);
         }
         self.write_sinks();
+    }
+}
+pub struct Record<'a> {
+    pub line: u32,
+    pub args: &'a std::fmt::Arguments<'a>,
+    pub file: &'a str,
+    pub level: Level,
+}
+
+impl Log for Glogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.flags.minloglevel >= metadata.level()
+    }
+
+    fn log(&self, r: &log::Record) {
+        if !self.enabled(r.metadata()) {
+            return;
+        }
+        let record = Record {
+            line: r.line().unwrap_or(0),
+            args: r.args(),
+            file: &Glogger::record_to_file_name(r),
+            level: Level::from(r.metadata().level()),
+        };
+        self.log_internal(&record);
     }
 
     fn flush(&self) {
@@ -492,30 +475,6 @@ mod bindings {
 fn get_tid() -> u64 {
     let win_tid = unsafe { bindings::Windows::Win32::System::Threading::GetCurrentThreadId() };
     win_tid.try_into().unwrap()
-}
-
-impl Clone for Glog {
-    fn clone(&self) -> Glog {
-        Glog {
-            stderr_writer: CachedThreadLocal::new(),
-            flags: self.flags.clone(),
-            application_fingerprint: self.application_fingerprint.clone(),
-            file_writer: self.file_writer.clone(),
-            level_integers: self.level_integers.clone(),
-            ..*self
-        }
-    }
-}
-
-impl Default for Glog {
-    fn default() -> Self {
-        Glog::new()
-    }
-}
-
-/// Create a new Glog instance
-pub fn new() -> Glog {
-    Glog::new()
 }
 
 #[cfg(test)]

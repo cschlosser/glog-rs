@@ -1,6 +1,6 @@
 use std::thread;
 
-use glog::Flags;
+use glog::{fatal, Extensions, Flags};
 use log::*;
 
 pub fn foo() {
@@ -21,27 +21,25 @@ pub fn foo() {
 }
 
 fn main() {
-    glog::new()
-        .with_year(true)
-        .reduced_log_levels(true)
-        .set_application_fingerprint("Example")
-        .init(Flags {
+    glog::init(
+        Flags {
             colorlogtostderr: true,
             minloglevel: Level::Trace,
             log_backtrace_at: Some("main.rs:20".to_owned()),
             alsologtostderr: true,
             ..Default::default()
-        })
-        .unwrap();
+        },
+        Some("example application".to_string()),
+        Some(Extensions {
+            with_year: true,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
 
-    error!("some erro in main while testing the logger");
+    error!("some error in main while testing the logger");
 
     foo();
 
-    info!(
-        "{:?}",
-        Flags {
-            ..Default::default()
-        }
-    );
+    fatal!("This will stop the application");
 }
