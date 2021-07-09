@@ -29,25 +29,17 @@ fn main() {
             alsologtostderr: true,
             ..Default::default()
         },
+        Some("example application".to_string()),
         Some(Extensions {
             with_year: true,
             ..Default::default()
         }),
     )
     .unwrap();
-    /*
-    match glog::logger() {
-        Some(logger) => logger
-            .borrow_mut()
-            .with_year(true)
-            .reduced_log_levels(true)
-            .set_application_fingerprint("Example"),
-        None => todo!(),
-    }; */
-    error!("some erro in main while testing the logger");
+
+    error!("some error in main while testing the logger");
 
     foo();
 
-    info!("{:?}", Flags { ..Default::default() });
     fatal!("This will stop the application");
 }

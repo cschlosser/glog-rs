@@ -113,7 +113,7 @@ pub static LOGGER: OnceCell<Glogger> = OnceCell::new();
 ///
 /// info!("A log message");
 /// ```
-pub fn init(flags: Flags, extensions: Option<Extensions>) -> Result<(), log::SetLoggerError> {
+pub fn init(flags: Flags, fingerprint: Option<String>, extensions: Option<Extensions>) -> Result<(), log::SetLoggerError> {
     let logger = LOGGER.get_or_init(|| {
         let mut l = Glogger {
             stderr_writer: CachedThreadLocal::new(),
@@ -142,6 +142,7 @@ pub fn init(flags: Flags, extensions: Option<Extensions>) -> Result<(), log::Set
             None => (),
             Some(extensions) => l.extensions = extensions,
         }
+        l.application_fingerprint = fingerprint;
         l
     });
     log::set_logger(logger)
@@ -223,12 +224,6 @@ pub struct Glogger {
     level_integers: BiMap<Level, i8>,
 }
 impl Glogger {
-    /// Set `fingerprint` as the application fingerprint in the log file header
-    pub fn set_application_fingerprint(mut self, fingerprint: &str) -> Self {
-        self.application_fingerprint = Some(fingerprint.to_owned());
-        self
-    }
-
     fn match_level(&self, level: &Level) -> Level {
         match level {
             Level::Debug if !self.extensions.with_rust_levels => Level::Info,
