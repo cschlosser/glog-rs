@@ -376,7 +376,7 @@ impl Glog {
             Local::now().format(&format!("{}%m%d %H:%M:%S%.6f", if self.compatible_date { "" } else { "%Y" })),
             get_tid(),
             Glog::record_to_file_name(record),
-            record.line().unwrap(),
+            record.line().unwrap_or(0),
             record.args(),
         )
     }
