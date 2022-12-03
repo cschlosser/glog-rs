@@ -13,7 +13,7 @@ documentation = "https://docs.rs/glog/0.1.0/"
 
 [dependencies]
 log = { version = "0.4.11", features = ["std"] }
-thread_local = "~1.0"
+thread_local = "~1"
 termcolor = "~1.1"
 chrono = "0.4.10"
 backtrace = "0.3.60"
