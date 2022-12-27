@@ -281,11 +281,7 @@ impl Glog {
         log_file_name.push(whoami::username().if_empty("invalid-user".to_string()));
         log_file_name.push(".log.");
 
-        let log_file_suffix = format!(
-            ".{}.{}",
-            Local::now().format("%Y%m%d-%H%M%S"),
-            std::process::id()
-        );
+        let log_file_suffix = format!(".{}.{}", Local::now().format("%Y%m%d-%H%M%S"), std::process::id());
 
         let mut log_file_base = OsString::new();
         log_file_base.push(log_file_dir);
