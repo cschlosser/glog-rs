@@ -90,7 +90,7 @@ use chrono::{DateTime, Local};
 use if_empty::*;
 use log::{Level, Log, Metadata, Record};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use thread_local::CachedThreadLocal;
+use thread_local::ThreadLocal;
 
 mod flags;
 
@@ -98,7 +98,7 @@ pub use flags::Flags;
 
 /// The logging structure doing all the heavy lifting
 pub struct Glog {
-    stderr_writer: CachedThreadLocal<RefCell<StandardStream>>,
+    stderr_writer: ThreadLocal<RefCell<StandardStream>>,
     compatible_verbosity: bool,
     compatible_date: bool,
     flags: Flags,
@@ -112,7 +112,7 @@ impl Glog {
     /// Create a new Glog object for logging
     pub fn new() -> Glog {
         Glog {
-            stderr_writer: CachedThreadLocal::new(),
+            stderr_writer: ThreadLocal::new(),
             compatible_verbosity: true,
             compatible_date: true,
             flags: Flags::default(),
@@ -283,8 +283,8 @@ impl Glog {
 
         let log_file_suffix = format!(
             ".{}.{}",
-            Local::now().format("%Y%m%d-%H%M%S").to_string(),
-            std::process::id().to_string()
+            Local::now().format("%Y%m%d-%H%M%S"),
+            std::process::id()
         );
 
         let mut log_file_base = OsString::new();
@@ -294,21 +294,21 @@ impl Glog {
             for level in &[Level::Trace, Level::Debug] {
                 let mut log_file_path = log_file_base.clone();
                 log_file_path.push(level.to_string().to_uppercase());
-                log_file_path.push(log_file_suffix.to_string());
+                log_file_path.push(&log_file_suffix);
                 self.write_file_header(&log_file_path, level);
             }
         }
         for level in &[Level::Info, Level::Warn, Level::Error] {
             let mut log_file_path = log_file_base.clone();
             log_file_path.push(level.to_string().to_uppercase());
-            log_file_path.push(log_file_suffix.to_string());
+            log_file_path.push(&log_file_suffix);
             self.write_file_header(&log_file_path, level);
         }
     }
 
     fn write_file_header(&mut self, file_path: &OsString, level: &Level) {
         {
-            let mut file = match File::create(&file_path) {
+            let mut file = match File::create(file_path) {
                 Err(why) => panic!(
                     "couldn't create {}: {}",
                     file_path.to_str().unwrap_or("<INVALID FILE PATH>"),
@@ -346,7 +346,7 @@ impl Glog {
             Arc::new(Mutex::new(RefCell::new(
                 OpenOptions::new()
                     .append(true)
-                    .open(&file_path)
+                    .open(file_path)
                     .expect("Couldn't open file after header is written"),
             ))),
         );
@@ -354,7 +354,7 @@ impl Glog {
 
     fn should_log_backtrace(&self, file_name: &str, line: u32) -> bool {
         if self.flags.log_backtrace_at.is_some() {
-            format!("{}:{}", file_name, line) == *self.flags.log_backtrace_at.as_ref().unwrap()
+            format!("{file_name}:{line}") == *self.flags.log_backtrace_at.as_ref().unwrap()
         } else {
             false
         }
@@ -497,7 +497,7 @@ fn get_tid() -> u64 {
 impl Clone for Glog {
     fn clone(&self) -> Glog {
         Glog {
-            stderr_writer: CachedThreadLocal::new(),
+            stderr_writer: ThreadLocal::new(),
             flags: self.flags.clone(),
             application_fingerprint: self.application_fingerprint.clone(),
             file_writer: self.file_writer.clone(),
