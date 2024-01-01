@@ -6,7 +6,7 @@
   - [x] Writing header
   - [x] Writing log entries
   - [x] Writing backtrace
-  - [ ] Symlinks
+  - [x] Symlinks
   - [ ] Filesize limits
   - [ ] Filerotation
 - [ ] `LOG_IF` macros

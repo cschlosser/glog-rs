@@ -269,12 +269,9 @@ impl Glog {
     fn create_log_files(&mut self) {
         let log_file_dir = self.flags.log_dir.clone();
         let mut log_file_name = OsString::new();
-        log_file_name.push(
-            std::env::current_exe()
-                .unwrap_or_else(|_| PathBuf::from_str("UNKNOWN").unwrap_or_default())
-                .file_name()
-                .unwrap_or_else(|| OsStr::new("UNKNOWN")),
-        );
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from_str("UNKNOWN").unwrap_or_default());
+        let exe = exe.file_name().unwrap_or_else(|| OsStr::new("UNKNOWN"));
+        log_file_name.push(exe);
         log_file_name.push(".");
         log_file_name.push(gethostname::gethostname().if_empty(OsString::from("(unknown)")));
         log_file_name.push(".");
@@ -284,14 +281,22 @@ impl Glog {
         let log_file_suffix = format!(".{}.{}", Local::now().format("%Y%m%d-%H%M%S"), std::process::id());
 
         let mut log_file_base = OsString::new();
-        log_file_base.push(log_file_dir);
+        log_file_base.push(&log_file_dir);
         log_file_base.push(log_file_name);
+
+        let mut symlink_file_base = OsString::new();
+        symlink_file_base.push(log_file_dir);
+        symlink_file_base.push(exe);
+        symlink_file_base.push(".");
         if !self.compatible_verbosity {
             for level in &[Level::Trace, Level::Debug] {
                 let mut log_file_path = log_file_base.clone();
                 log_file_path.push(level.to_string().to_uppercase());
                 log_file_path.push(&log_file_suffix);
                 self.write_file_header(&log_file_path, level);
+                let mut symlink_file_name = symlink_file_base.clone();
+                symlink_file_name.push(level.to_string().to_uppercase());
+                self.create_symlink(&log_file_path, &symlink_file_name);
             }
         }
         for level in &[Level::Info, Level::Warn, Level::Error] {
@@ -299,6 +304,9 @@ impl Glog {
             log_file_path.push(level.to_string().to_uppercase());
             log_file_path.push(&log_file_suffix);
             self.write_file_header(&log_file_path, level);
+            let mut symlink_file_name = symlink_file_base.clone();
+            symlink_file_name.push(level.to_string().to_uppercase());
+            self.create_symlink(&log_file_path, &symlink_file_name);
         }
     }
 
@@ -346,6 +354,19 @@ impl Glog {
                     .expect("Couldn't open file after header is written"),
             ))),
         );
+    }
+
+    /// On supported platforms creates short stable named symlinks pointing to latest log file.
+    /// Example /tmp/main.INFO -> /tmp/main.hostname.username.log.INFO.<timestamp>
+    fn create_symlink(&self, long_name: &OsString, symlink_name: &OsString) {
+        #[cfg(target_family = "unix")]
+        {
+            // Unconditionally remove any existing symlink
+            let _ = std::fs::remove_file(symlink_name);
+            // Create new symlink
+            std::os::unix::fs::symlink(long_name, symlink_name)
+                .unwrap_or_else(|_| panic!("failed to create symlink {}", symlink_name.to_str().unwrap()));
+        }
     }
 
     fn should_log_backtrace(&self, file_name: &str, line: u32) -> bool {
